@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       queryText: queryText.trim(),
       topK: topK !== undefined ? Number(topK) : defaultTopK,
       minScore: minScore !== undefined ? Number(minScore) : 0.0,
-      apiKey: envApiKey,
+      apiKey: apiKey || envApiKey,
       llmModel: selLlmModel,
       embeddingModel: selEmbeddingModel,
       chunks,

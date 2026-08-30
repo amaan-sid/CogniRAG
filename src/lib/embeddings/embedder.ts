@@ -95,6 +95,7 @@ export async function generateEmbeddings(options: EmbeddingOptions): Promise<Emb
   if (keyToUse.length > 0) {
     try {
       const url = 'https://integrate.api.nvidia.com/v1/embeddings';
+      const modelForApi = model.includes('/') ? model : `nvidia/${model}`;
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -102,7 +103,7 @@ export async function generateEmbeddings(options: EmbeddingOptions): Promise<Emb
           Authorization: `Bearer ${keyToUse}`,
         },
         body: JSON.stringify({
-          model: 'nvidia/'+model,
+          model: modelForApi,
           input: chunks.map((c) => c.text),
           input_type: 'passage',
           encoding_format: 'float',

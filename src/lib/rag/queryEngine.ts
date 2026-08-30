@@ -83,10 +83,11 @@ export async function executeRagQuery(options: RagQueryOptions): Promise<RagQuer
   } = options;
 
   const nvidiaApiKey = process.env.NVIDIA_API_KEY || apiKey || '';
-  const envLlmModel = process.env.LLM_MODEL || llmModel || 'nemotron-3-super-120b-a12b';
-  const envEmbeddingModel = process.env.EMBEDDING_MODEL || embeddingModel || 'nemotron-3-embed-1b';
+  const rawLlmModel = process.env.LLM_MODEL || llmModel || 'nvidia/nemotron-3-super-120b-a12b';
+  const rawEmbeddingModel = process.env.EMBEDDING_MODEL || embeddingModel || 'nvidia/nemotron-3-embed-1b';
 
-  const llmModelForApi = envLlmModel;
+  const llmModelForApi = rawLlmModel.includes('/') ? rawLlmModel : `nvidia/${rawLlmModel}`;
+  const envEmbeddingModel = rawEmbeddingModel.includes('/') ? rawEmbeddingModel : `nvidia/${rawEmbeddingModel}`;
 
   // Initialize Vector Store (MongoDB)
   const store = new VectorStore();
