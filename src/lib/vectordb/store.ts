@@ -5,6 +5,8 @@ export interface VectorRecord {
   text: string;
   pageRange?: string;
   estimatedTokens?: number;
+  sessionId?: string;
+  userId?: string;
   metadata?: Record<string, any>;
 }
 
@@ -27,6 +29,11 @@ export interface VectorStoreStats {
   memorySizeBytes: number;
   indexStatus: 'ready' | 'empty' | 'indexing';
   lastIndexedAt?: string;
+}
+
+export interface VectorSearchFilter {
+  sessionId?: string;
+  userId?: string;
 }
 
 function dotProduct(a: number[], b: number[]): number {
@@ -111,6 +118,8 @@ export class VectorStore {
             text: record.text,
             pageRange: record.pageRange || 'Page 1',
             estimatedTokens: record.estimatedTokens || 0,
+            sessionId: record.sessionId,
+            userId: record.userId,
             metadata: record.metadata || {},
             updatedAt: new Date(),
           },
@@ -126,12 +135,13 @@ export class VectorStore {
 
   /**
    * Execute Top-K Cosine Similarity Search on MongoDB Vector DB.
-   * Tries MongoDB Atlas $vectorSearch first, falling back to exact vector cosine ranking.
+   * Tries MongoDB Atlas $vectorSearch first with optional sessionId filter, falling back to exact vector cosine ranking.
    */
   public async search(
     queryVector: number[],
     topK: number = 5,
-    minScoreThreshold: number = 0.0
+    minScoreThreshold: number = 0.0,
+    filter?: VectorSearchFilter
   ): Promise<VectorSearchResult[]> {
     if (!queryVector || queryVector.length === 0) {
       return [];
@@ -143,7 +153,7 @@ export class VectorStore {
         const res = await fetch('/api/pdf/vectordb', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'search', queryVector, topK, minScore: minScoreThreshold }),
+          body: JSON.stringify({ action: 'search', queryVector, topK, minScore: minScoreThreshold, filter }),
         });
         const data = await res.json();
         return data.results || [];
@@ -158,15 +168,23 @@ export class VectorStore {
 
     // 1. Try native MongoDB Atlas $vectorSearch aggregation pipeline
     try {
+      const vectorSearchStage: any = {
+        index: indexName,
+        path: 'vector',
+        queryVector: queryVector,
+        numCandidates: Math.max(topK * 10, 50),
+        limit: topK,
+      };
+
+      if (filter?.sessionId) {
+        vectorSearchStage.filter = {
+          sessionId: { $eq: filter.sessionId },
+        };
+      }
+
       const pipeline = [
         {
-          $vectorSearch: {
-            index: indexName,
-            path: 'vector',
-            queryVector: queryVector,
-            numCandidates: Math.max(topK * 10, 50),
-            limit: topK,
-          },
+          $vectorSearch: vectorSearchStage,
         },
         {
           $project: {
@@ -176,6 +194,7 @@ export class VectorStore {
             pageRange: 1,
             vector: 1,
             estimatedTokens: 1,
+            sessionId: 1,
             metadata: 1,
             similarityScore: { $meta: 'vectorSearchScore' },
           },
@@ -204,8 +223,16 @@ export class VectorStore {
       );
     }
 
-    // 2. Fallback: Exact Cosine Similarity ranking over MongoDB documents
-    const docs = await collection.find({}).toArray();
+    // 2. Fallback: Exact Cosine Similarity ranking over MongoDB documents with session filter
+    const mongoFilter: any = {};
+    if (filter?.sessionId) {
+      mongoFilter.sessionId = filter.sessionId;
+    }
+    if (filter?.userId) {
+      mongoFilter.userId = filter.userId;
+    }
+
+    const docs = await collection.find(mongoFilter).toArray();
     if (!docs || docs.length === 0) {
       return [];
     }
@@ -263,10 +290,10 @@ export class VectorStore {
       };
     }
 
+    const collection = await this.getCollection();
     let totalVectors = 0;
     let dimensions = 1024;
     try {
-      const collection = await this.getCollection();
       totalVectors = await collection.countDocuments();
       const sampleDoc = await collection.findOne({}, { projection: { vector: 1 } });
       if (sampleDoc && Array.isArray(sampleDoc.vector) && sampleDoc.vector.length > 0) {
@@ -297,15 +324,15 @@ export class VectorStore {
   }
 
   /**
-   * Clear collection records directly in MongoDB index.
+   * Clear collection records in MongoDB index, optionally scoped by sessionId.
    */
-  public async clear(): Promise<void> {
+  public async clear(filter?: VectorSearchFilter): Promise<void> {
     if (typeof window !== 'undefined') {
       try {
         await fetch('/api/pdf/vectordb', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'clear' }),
+          body: JSON.stringify({ action: 'clear', ...filter }),
         });
       } catch (err) {
         console.error('Client vector DB clear error:', err);
@@ -315,8 +342,12 @@ export class VectorStore {
 
     try {
       const collection = await this.getCollection();
-      await collection.deleteMany({});
-      console.log(`Cleared all records from MongoDB collection "${this.collectionName}".`);
+      const deleteFilter: any = {};
+      if (filter?.sessionId) deleteFilter.sessionId = filter.sessionId;
+      if (filter?.userId) deleteFilter.userId = filter.userId;
+
+      await collection.deleteMany(deleteFilter);
+      console.log(`Cleared records from MongoDB collection "${this.collectionName}" with filter:`, deleteFilter);
     } catch (err) {
       console.warn('MongoDB deleteMany failed:', err);
     }

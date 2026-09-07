@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractTextFromPDF } from '@/lib/pdf/extractor';
+import { uploadPdfToCloudinary } from '@/lib/storage/cloudinary';
 
 export const runtime = 'nodejs'; // Ensure Node.js runtime for pdf-parse
 
@@ -33,9 +34,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const extractionResult = await extractTextFromPDF(buffer, file.name);
+    // Concurrently extract text from PDF and upload to Cloudinary
+    const [extractionResult, uploadResult] = await Promise.all([
+      extractTextFromPDF(buffer, file.name),
+      uploadPdfToCloudinary(buffer, file.name).catch((err) => {
+        console.warn('Cloudinary upload warning (non-fatal):', err.message);
+        return null;
+      }),
+    ]);
 
-    return NextResponse.json(extractionResult, { status: 200 });
+    return NextResponse.json(
+      {
+        ...extractionResult,
+        cloudinaryUrl: uploadResult?.secureUrl,
+        cloudinaryPublicId: uploadResult?.publicId,
+      },
+      { status: 200 }
+    );
   } catch (error: any) {
     console.error('API Error in /api/pdf/parse:', error);
     return NextResponse.json(

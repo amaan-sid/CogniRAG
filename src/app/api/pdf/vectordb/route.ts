@@ -7,8 +7,15 @@ export async function POST(request: NextRequest) {
     const { action = 'upsert', records } = body;
 
     if (action === 'clear') {
-      await globalVectorStore.clear();
-      return NextResponse.json({ success: true, message: 'Vector database collection cleared.' });
+      const { sessionId, userId, filter } = body;
+      const targetFilter = filter || (sessionId || userId ? { sessionId, userId } : undefined);
+      await globalVectorStore.clear(targetFilter);
+      return NextResponse.json({
+        success: true,
+        message: targetFilter?.sessionId
+          ? `Vector database cleared for session ${targetFilter.sessionId}.`
+          : 'Vector database collection cleared.',
+      });
     }
 
     if (action === 'stats') {
@@ -17,8 +24,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'search') {
-      const { queryVector, topK = process.env.TOP_K || 5, minScore = 0.0 } = body;
-      const results = await globalVectorStore.search(queryVector, topK, minScore);
+      const { queryVector, topK = process.env.TOP_K || 5, minScore = 0.0, filter, sessionId, userId } = body;
+      const searchFilter = filter || (sessionId || userId ? { sessionId, userId } : undefined);
+      const results = await globalVectorStore.search(queryVector, topK, minScore, searchFilter);
       return NextResponse.json({ success: true, results });
     }
 

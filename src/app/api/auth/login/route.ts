@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findUserByEmail, verifyPassword } from '@/lib/auth/userModel';
+import { findUserByEmailOrUsername, verifyPassword } from '@/lib/auth/userModel';
 import { signJwtToken, AUTH_COOKIE_NAME } from '@/lib/auth/jwt';
 
 export async function POST(req: NextRequest) {
@@ -9,15 +9,15 @@ export async function POST(req: NextRequest) {
 
     if (!email || !password) {
       return NextResponse.json(
-        { error: 'Please enter both your email address and password.' },
+        { error: 'Please enter both your email or username and password.' },
         { status: 400 }
       );
     }
 
-    const user = await findUserByEmail(email);
+    const user = await findUserByEmailOrUsername(email);
     if (!user) {
       return NextResponse.json(
-        { error: 'Invalid email address or password.' },
+        { error: 'Invalid credentials. User not found.' },
         { status: 401 }
       );
     }
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const isMatch = await verifyPassword(password, user.passwordHash);
     if (!isMatch) {
       return NextResponse.json(
-        { error: 'Invalid email address or password.' },
+        { error: 'Invalid credentials. Password does not match.' },
         { status: 401 }
       );
     }
@@ -36,26 +36,32 @@ export async function POST(req: NextRequest) {
       userId,
       name: user.name,
       email: user.email,
+      username: user.username || user.email.split('@')[0],
+      gender: user.gender,
     });
 
     const response = NextResponse.json({
       success: true,
       message: 'Signed in successfully!',
+      token,
       user: {
         userId,
         name: user.name,
         email: user.email,
+        username: user.username || user.email.split('@')[0],
+        gender: user.gender,
+        profilePic: user.profilePic,
       },
     });
 
-    response.cookies.set({
-      name: AUTH_COOKIE_NAME,
-      value: token,
+    const isProd = process.env.NODE_ENV === 'production';
+
+    response.cookies.set('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
-      maxAge: 7 * 24 * 60 * 60, // 7 days
     });
 
     return response;
@@ -67,3 +73,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

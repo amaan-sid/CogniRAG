@@ -3,6 +3,8 @@ import pdfParse from 'pdf-parse';
 export interface PDFExtractionResult {
   success: boolean;
   filename?: string;
+  cloudinaryUrl?: string;
+  cloudinaryPublicId?: string;
   numPages: number;
   info: {
     title?: string;
